@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # Base de données MongoDB
+  mongo:
+    image: mongo:latest
+    container_name: mongo_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./mongo-data:/data/db
+    networks:
+      - app-network
+    environment:
+      MONGO_INITDB_DATABASE: harassment_analysis
+
+  # Interface d'administration MongoDB
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo_express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+    depends_on:
+      - mongo
+    networks:
+      - app-network
+
+  # Collecteur Twitter (scraper)
+  twitter-scraper:
+    build: .
+    container_name: twitter_scraper
+    volumes:
+      - ./data:/app/data  # Pour sauvegarder les fichiers JSON/CSV
+    environment:
+      - TWITTER_BEARER_TOKEN=${TWITTER_BEARER_TOKEN}
+      - MONGO_URL=mongodb://mongo:27017/
+    depends_on:
+      - mongo
+    networks:
+      - app-network
+    command: ["python", "app.py"]  # app.py est votre scraper Twitter
+
+  # API FastAPI pour l'analyse
+  harassment-api:
+    build: .
+    container_name: harassment_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data  # Partager les données avec le scraper
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/
+    depends_on:
+      - mongo
+      - twitter-scraper
+    networks:
+      - app-network
+    command: ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mongo-data:
